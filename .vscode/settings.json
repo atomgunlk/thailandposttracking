@@ -1,0 +1,13 @@
+{
+  "editor.insertSpaces": false,
+  "go.alternateTools": {},
+  "go.testFlags": [
+    "-args",
+    "-test.v",
+    "-test.benchmem"
+  ],
+  "go.testEnvVars": {
+    "APP_ENV": "development", // production // development // debug
+    "LOG_LEVEL": "debug",
+  },
+}
