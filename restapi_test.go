@@ -27,6 +27,29 @@ func TestGetItemsbyBarcode(t *testing.T) {
 	if !assert.NoError(t, err) {
 		return
 	}
+
+	assert.Equal(t, true, response.Status)
+
+	jsonStr, _ := json.MarshalIndent(response, "", "    ")
+	logger.Debugf("RESP : %s\r\n", jsonStr)
+}
+
+func TestGetItemsbyReceipt(t *testing.T) {
+	response, err := thpostClient.GetItemsbyReceipt(&thailandposttracking.GetItemsbyReceiptRequest{
+		Status:   "all",
+		Language: "TH",
+		ReceiptNo: []string{
+			"361101377131",
+			"361101377132",
+			"361101377133",
+		},
+	})
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	assert.Equal(t, true, response.Status)
+
 	jsonStr, _ := json.MarshalIndent(response, "", "    ")
 	logger.Debugf("RESP : %s\r\n", jsonStr)
 }

@@ -16,7 +16,7 @@ const (
 	endpointRestGetToken          = "authenticate/token"
 	endpointRestGetItemsbyBarcode = "track"
 	endpointRestGetItemsbyReceipt = "receipt/track"
-	endpointRestRequestItems      = "track/batch"
+	endpointRestGetBatchItems     = "track/batch"
 )
 
 type GetTokenResponse struct {
@@ -39,7 +39,7 @@ func (c *Client) getAPIToken() error {
 	}
 
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("[ThailandPost.getAPIToken]: Status code %d", res.StatusCode)
+		return fmt.Errorf("[ThailandPost.getAPIToken]: Status code %d, %s", res.StatusCode, thailandpostStatusTHText(res.StatusCode))
 	}
 
 	response := &GetTokenResponse{}
@@ -63,10 +63,13 @@ type (
 		Barcodes []string `json:"barcode"`  // หมายเลขสิ่งของ เช่น EY145587896TH
 	}
 	GetItemsbyBarcodeResponse struct {
-		Data GetItemsbyBarcodeResponseData `json:"response"`
+		Data    GetItemsbyBarcodeResponseData `json:"response"`
+		Message string                        `json:"message"`
+		Status  bool                          `json:"status"`
 	}
 	GetItemsbyBarcodeResponseData struct {
-		Items map[string][]ThailandPostItemStatus `json:"items"`
+		Items      map[string][]ThailandPostItemStatus `json:"items"`
+		TrackCount SubscribeTrackCount                 `json:"track_count"`
 	}
 	ThailandPostItemStatus struct {
 		Barcode             string `json:"barcode"`              // "EF023395845TH",
@@ -83,6 +86,8 @@ type (
 	}
 )
 
+// GetItemsbyBarcode
+// ใช้ในการ Get ข้อมูลสถานะของหมายเลขสิ่งของฝากส่ง จำนวนไม่เกิน 1,000 หมายเลขเท่านั้น
 func (c *Client) GetItemsbyBarcode(req *GetItemsbyBarcodeRequest) (*GetItemsbyBarcodeResponse, error) {
 	if isTokenExpired(&c.apiToken) {
 		err := c.getAPIToken()
@@ -108,7 +113,7 @@ func (c *Client) GetItemsbyBarcode(req *GetItemsbyBarcodeRequest) (*GetItemsbyBa
 	}
 
 	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("[ThailandPost.GetItemsbyBarcode]: Status code %d", res.StatusCode)
+		return nil, fmt.Errorf("[ThailandPost.GetItemsbyBarcode]: Status code %d, %s", res.StatusCode, thailandpostStatusTHText(res.StatusCode))
 	}
 
 	response := &GetItemsbyBarcodeResponse{}
@@ -119,41 +124,115 @@ func (c *Client) GetItemsbyBarcode(req *GetItemsbyBarcodeRequest) (*GetItemsbyBa
 
 	return response, nil
 }
-func (c *Client) GetItemsbyReceipt() error {
-	// # REQ
-	// Authorization: Token (Your-Token-Key)
-	// Content-Type: application/json
 
-	// # RESP
-	// {
-	// 	"expire": "2019-09-28 10:18:20+07:00",
-	// 	"token": "eyJ0eXAiOiJKV1QiLCJhbG..."
-	// }
+type (
+	GetItemsbyReceiptRequest struct {
+		Status    string   `json:"status"`    // เช่น รับฝาก = '103', ทั้งหมด = 'all'
+		Language  string   `json:"language"`  // TH,EN,CN
+		ReceiptNo []string `json:"receiptNo"` // หมายเลขใบเสร็จ เช่น 361101377131
+	}
+	GetItemsbyReceiptResponse struct {
+		Data    GetItemsbyReceiptResponseData `json:"response"`
+		Message string                        `json:"message"`
+		Status  bool                          `json:"status"`
+	}
+	GetItemsbyReceiptResponseData struct {
+		Receipts   map[string]GetItemsbyReceiptResponseItemMap `json:"receipts"`
+		TrackCount SubscribeTrackCount                         `json:"track_count"`
+	}
+	GetItemsbyReceiptResponseItemMap map[string][]ThailandPostItemStatus
+)
+
+// GetItemsbyReceipt
+// ใช้ในการ Get ข้อมูลสถานะของหมายเลขสิ่งของโดยใช้หมายเลขใบเสร็จไม่เกิน 10 หมายเลข (จำนวนสิ่งของไม่เกิน 1,000 หมายเลข) เท่านั้น
+func (c *Client) GetItemsbyReceipt(req *GetItemsbyReceiptRequest) (*GetItemsbyReceiptResponse, error) {
 	if isTokenExpired(&c.apiToken) {
 		err := c.getAPIToken()
 		if err != nil {
-			return errors.Wrap(err, "[ThailandPost.GetItemsbyBarcode]")
+			return nil, errors.Wrap(err, "[ThailandPost.GetItemsbyReceipt]")
 		}
 	}
 
-	return nil
+	url := fmt.Sprintf("%s%s", restAPIBaseUrl, endpointRestGetItemsbyReceipt)
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "[ThailandPost.GetItemsbyReceipt]: unable to marshal req")
+	}
+	res, err := c.httpClient.Post(url, request.SendOptions{
+		"headers": map[string]interface{}{
+			"Authorization": fmt.Sprintf("Token %s", c.apiToken.Token),
+			"Content-Type":  "application/json",
+		},
+	}, reqBody)
+	if err != nil {
+		logger.WithError(err).Error("[ThailandPost.GetItemsbyReceipt]:")
+		return nil, errors.Wrap(err, "[ThailandPost.GetItemsbyReceipt]:")
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("[ThailandPost.GetItemsbyReceipt]: Status code %d, %s", res.StatusCode, thailandpostStatusTHText(res.StatusCode))
+	}
+
+	response := &GetItemsbyReceiptResponse{}
+	if err := json.Unmarshal(res.Body, response); err != nil {
+		logger.WithError(err).Errorf("[ThailandPost.GetItemsbyReceipt]: resp body %s", string(res.Body))
+		return nil, errors.Wrap(err, "[ThailandPost.GetItemsbyReceipt]: unable to unmarshal response")
+	}
+	return response, nil
 }
-func (c *Client) RequestItems() error {
-	// # REQ
-	// Authorization: Token (Your-Token-Key)
-	// Content-Type: application/json
 
-	// # RESP
-	// {
-	// 	"expire": "2019-09-28 10:18:20+07:00",
-	// 	"token": "eyJ0eXAiOiJKV1QiLCJhbG..."
-	// }
+type (
+	GetBatchItemsRequest struct {
+		Status   string   `json:"status"`   // เช่น รับฝาก = '103', ทั้งหมด = 'all'
+		Language string   `json:"language"` // TH,EN,CN
+		Barcodes []string `json:"barcode"`  // หมายเลขสิ่งของ เช่น EY145587896TH
+	}
+	GetBatchItemsResponse struct {
+		Data    GetBatchItemsResponseData `json:"response"`
+		Message string                    `json:"message"`
+		Status  bool                      `json:"status"`
+	}
+	GetBatchItemsResponseData struct {
+		Items      map[string][]ThailandPostItemStatus `json:"items"`
+		TrackCount SubscribeTrackCount                 `json:"track_count"`
+	}
+)
+
+// GetBatchItems
+// ใช้ในการ Get ข้อมูลสถานะของหมายเลขสิ่งของจำนวน 1,000 หมายเลขขึ้นไป ข้อมูลจะถูกส่งไปยัง Email ในรูปแบบ Link File Download
+func (c *Client) GetBatchItems(req *GetBatchItemsRequest) (*GetBatchItemsResponse, error) {
 	if isTokenExpired(&c.apiToken) {
 		err := c.getAPIToken()
 		if err != nil {
-			return errors.Wrap(err, "[ThailandPost.GetItemsbyBarcode]")
+			return nil, errors.Wrap(err, "[ThailandPost.GetBatchItems]")
 		}
 	}
 
-	return nil
+	url := fmt.Sprintf("%s%s", restAPIBaseUrl, endpointRestGetBatchItems)
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, errors.Wrap(err, "[ThailandPost.GetBatchItems]: unable to marshal req")
+	}
+	res, err := c.httpClient.Post(url, request.SendOptions{
+		"headers": map[string]interface{}{
+			"Authorization": fmt.Sprintf("Token %s", c.apiToken.Token),
+			"Content-Type":  "application/json",
+		},
+	}, reqBody)
+	if err != nil {
+		logger.WithError(err).Error("[ThailandPost.GetBatchItems]:")
+		return nil, errors.Wrap(err, "[ThailandPost.GetBatchItems]:")
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("[ThailandPost.GetBatchItems]: Status code %d, %s", res.StatusCode, thailandpostStatusTHText(res.StatusCode))
+	}
+
+	response := &GetBatchItemsResponse{}
+	if err := json.Unmarshal(res.Body, response); err != nil {
+		logger.WithError(err).Errorf("[ThailandPost.GetBatchItems]: resp body %s", string(res.Body))
+		return nil, errors.Wrap(err, "[ThailandPost.GetBatchItems]: unable to unmarshal response")
+	}
+
+	return response, nil
 }

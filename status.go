@@ -1,5 +1,7 @@
 package thailandposttracking
 
+import "net/http"
+
 const (
 	ItemStatusAll = "all"
 	ItemStatus101 = "101" // เตรียมการฝากส่ง
@@ -34,3 +36,21 @@ const (
 // HTTP 401 Unauthorized Login Credentials ไม่ถูกต้อง
 // HTTP 429 Too Many Requests	จำนวนครั้งในการ Request มากเกินกว่าที่กำหนด
 )
+
+func thailandpostStatusTHText(code int) string {
+	switch code {
+	case http.StatusOK:
+		return "บันทึกสำเร็จ"
+	case http.StatusBadRequest:
+		return "รูปแบบข้อมูลที่ไม่ถูกต้อง"
+	case http.StatusInternalServerError:
+		return "บันทึกไม่สำเร็จ(เกิดจากปัญหาภายในระบบ)"
+	case http.StatusForbidden:
+		return "ไม่ผ่านการอนุญาติ"
+	case http.StatusUnauthorized:
+		return "Login Credentials ไม่ถูกต้อง"
+	case http.StatusTooManyRequests:
+		return "จำนวนครั้งในการ Request มากเกินกว่าที่กำหนด"
+	}
+	return http.StatusText(code)
+}
